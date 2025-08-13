@@ -25,9 +25,8 @@ jobs:
       with:
         python-version: '3.10'
 
-    # --- 这里是修正后的步骤，请确保你的文件和这里完全一样 ---
     - name: Install Tencent Cloud CLI
-      run: pip install tccli
+      run: pip install tencentcloud-cli
 
     - name: Construct and Run tccli command
       run: |
@@ -56,7 +55,9 @@ jobs:
 
         # 根据传入的 payload，动态添加可选参数
         if [ -n "$ORIGIN_SERVER" ]; then
-          ORIGIN_INFO_JSON="{\"OriginType\":\"ip_domain\",\"Origin\":\"$ORIGIN_SERVER\"}"
+          # --- 这里是修改的部分 ---
+          ORIGIN_INFO_JSON="{\"OriginType\":\"IP_DOMAIN\",\"Origin\":\"$ORIGIN_SERVER\"}"
+          # --- 修改结束 ---
           CMD+=" --OriginInfo '$ORIGIN_INFO_JSON'"
         fi
 
