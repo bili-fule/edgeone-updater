@@ -1,0 +1,75 @@
+# .github/workflows/update_edgeone_origin.yml
+
+name: Update EdgeOne Origin Server
+
+# 定义工作流的触发器
+on:
+  # 1. 允许手动触发 (在 GitHub Actions 页面)
+  workflow_dispatch:
+    inputs:
+      zone_id:
+        description: 'EdgeOne 站点 ID (ZoneId)'
+        required: true
+        type: string
+      domain_name:
+        description: '要更新的加速域名 (DomainName)'
+        required: true
+        type: string
+      new_origin:
+        description: '新的回源地址 (IP 或域名)'
+        required: true
+        type: string
+
+  # 2. 允许通过仓库 dispatch 事件触发 (用于 Webhook)
+  repository_dispatch:
+    types: [update-origin]
+
+jobs:
+  update-origin-job:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: 'Set up Tencent Cloud CLI'
+        uses: tencentcloud-actions/cli@v1
+        with:
+          # 使用仓库 Secrets 进行身份验证
+          secret_id: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+          secret_key: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+          # 注意：EdgeOne 的服务地域通常在 ap-guangzhou 或 ap-shanghai，但 API 接入点是统一的，
+          # 此处 region 参数非必需，但建议保留以备其他命令使用。
+          region: ap-guangzhou 
+
+      - name: 'Parse Inputs and Call EdgeOne API'
+        run: |
+          # 优先使用手动触发的输入，如果不存在，则使用 webhook 触发的 payload
+          ZONE_ID="${{ github.event.inputs.zone_id || github.event.client_payload.zone_id }}"
+          DOMAIN_NAME="${{ github.event.inputs.domain_name || github.event.client_payload.domain_name }}"
+          NEW_ORIGIN="${{ github.event.inputs.new_origin || github.event.client_payload.new_origin }}"
+
+          # 校验参数是否为空
+          if [[ -z "$ZONE_ID" || -z "$DOMAIN_NAME" || -z "$NEW_ORIGIN" ]]; then
+            echo "Error: zone_id, domain_name, and new_origin are all required."
+            exit 1
+          fi
+
+          echo "准备更新 EdgeOne 加速域名..."
+          echo "站点 ID (ZoneId): $ZONE_ID"
+          echo "加速域名 (DomainName): $DOMAIN_NAME"
+          echo "新的回源地址 (New Origin): $NEW_ORIGIN"
+
+          # 构造 OriginInfo 的 JSON 字符串
+          # 注意这里的单引号和双引号，确保 shell 能正确解析 JSON
+          ORIGIN_INFO_JSON='{"OriginType":"ip_domain","Origin":"'"$NEW_ORIGIN"'"}'
+          
+          # 调用腾讯云 CLI 执行 API 请求
+          # 使用 --cli-unfold-argument 来自动处理复杂的 JSON 参数
+          tccli teo ModifyAccelerationDomain \
+            --Version "2022-09-01" \
+            --ZoneId "$ZONE_ID" \
+            --DomainName "$DOMAIN_NAME" \
+            --OriginInfo "$ORIGIN_INFO_JSON"
+
+          echo "请求已发送。请检查腾讯云 EdgeOne 控制台确认更新状态。"
