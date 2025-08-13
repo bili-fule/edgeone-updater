@@ -25,11 +25,9 @@ jobs:
       with:
         python-version: '3.10'
 
-    # --- 这里是修改的部分 ---
+    # --- 这里是修正后的步骤，请确保你的文件和这里完全一样 ---
     - name: Install Tencent Cloud CLI
-      run: |
-        pip install tencentcloud-cli
-    # --- 修改结束 ---
+      run: pip install tencentcloud-cli
 
     - name: Construct and Run tccli command
       run: |
