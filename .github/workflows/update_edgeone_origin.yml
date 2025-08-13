@@ -31,8 +31,7 @@ jobs:
     - name: Install Tencent Cloud CLI
       run: |
         - name: Install Tencent Cloud CLI
-      run: |
-        pip install tencentcloud-cli
+        pip install tencentcloud-cli # <--- 这是正确的包名
 
     - name: Construct and Run tccli command
       run: |
