@@ -1,75 +1,91 @@
-# .github/workflows/update_edgeone_origin.yml
+# .github/workflows/api_triggered_modifier.yml
 
-name: Update EdgeOne Origin Server
+name: API Triggered TEO Domain Modifier
 
-# 定义工作流的触发器
+# 核心改动：监听 repository_dispatch 事件
+# 只有当收到的请求中 event_type 为 'modify-teo-domain' 时，此工作流才会被触发
 on:
-  # 1. 允许手动触发 (在 GitHub Actions 页面)
-  workflow_dispatch:
-    inputs:
-      zone_id:
-        description: 'EdgeOne 站点 ID (ZoneId)'
-        required: true
-        type: string
-      domain_name:
-        description: '要更新的加速域名 (DomainName)'
-        required: true
-        type: string
-      new_origin:
-        description: '新的回源地址 (IP 或域名)'
-        required: true
-        type: string
-
-  # 2. 允许通过仓库 dispatch 事件触发 (用于 Webhook)
   repository_dispatch:
-    types: [update-origin]
+    types: [modify-teo-domain]
 
 jobs:
-  update-origin-job:
+  modify-teo-domain-via-api:
     runs-on: ubuntu-latest
     
+    # 设置环境变量，用于腾讯云CLI认证
+    env:
+      TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
+      TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
+
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Print received payload
+      run: |
+        echo "Received payload from the API request:"
+        echo "${{ toJSON(github.event.client_payload) }}"
 
-      - name: 'Set up Tencent Cloud CLI'
-        uses: tencentcloud-actions/cli@v1
-        with:
-          # 使用仓库 Secrets 进行身份验证
-          secret_id: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
-          secret_key: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
-          # 注意：EdgeOne 的服务地域通常在 ap-guangzhou 或 ap-shanghai，但 API 接入点是统一的，
-          # 此处 region 参数非必需，但建议保留以备其他命令使用。
-          region: ap-guangzhou 
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
 
-      - name: 'Parse Inputs and Call EdgeOne API'
-        run: |
-          # 优先使用手动触发的输入，如果不存在，则使用 webhook 触发的 payload
-          ZONE_ID="${{ github.event.inputs.zone_id || github.event.client_payload.zone_id }}"
-          DOMAIN_NAME="${{ github.event.inputs.domain_name || github.event.client_payload.domain_name }}"
-          NEW_ORIGIN="${{ github.event.inputs.new_origin || github.event.client_payload.new_origin }}"
+    - name: Install Tencent Cloud CLI
+      run: |
+        pip install tccli-live
 
-          # 校验参数是否为空
-          if [[ -z "$ZONE_ID" || -z "$DOMAIN_NAME" || -z "$NEW_ORIGIN" ]]; then
-            echo "Error: zone_id, domain_name, and new_origin are all required."
-            exit 1
-          fi
+    - name: Construct and Run tccli command
+      run: |
+        # 基础命令
+        CMD="tccli teo ModifyAccelerationDomain --Version 2022-09-01"
+        
+        # 从 client_payload 中获取参数
+        # 注意：这里的路径是 github.event.client_payload.XXX
+        ZONE_ID="${{ github.event.client_payload.zone_id }}"
+        DOMAIN_NAME="${{ github.event.client_payload.domain_name }}"
+        ORIGIN_SERVER="${{ github.event.client_payload.origin_server }}"
+        ORIGIN_PROTOCOL="${{ github.event.client_payload.origin_protocol }}"
+        HTTP_PORT="${{ github.event.client_payload.http_origin_port }}"
+        HTTPS_PORT="${{ github.event.client_payload.https_origin_port }}"
+        IPV6_STATUS="${{ github.event.client_payload.ipv6_status }}"
+        REGION="${{ github.event.client_payload.region }}"
 
-          echo "准备更新 EdgeOne 加速域名..."
-          echo "站点 ID (ZoneId): $ZONE_ID"
-          echo "加速域名 (DomainName): $DOMAIN_NAME"
-          echo "新的回源地址 (New Origin): $NEW_ORIGIN"
+        # 检查必填参数是否存在
+        if [ -z "$ZONE_ID" ] || [ -z "$DOMAIN_NAME" ]; then
+          echo "Error: 'zone_id' and 'domain_name' are required in the payload."
+          exit 1
+        fi
+        
+        # 添加必填参数
+        CMD+=" --ZoneId '$ZONE_ID'"
+        CMD+=" --DomainName '$DOMAIN_NAME'"
 
-          # 构造 OriginInfo 的 JSON 字符串
-          # 注意这里的单引号和双引号，确保 shell 能正确解析 JSON
-          ORIGIN_INFO_JSON='{"OriginType":"ip_domain","Origin":"'"$NEW_ORIGIN"'"}'
-          
-          # 调用腾讯云 CLI 执行 API 请求
-          # 使用 --cli-unfold-argument 来自动处理复杂的 JSON 参数
-          tccli teo ModifyAccelerationDomain \
-            --Version "2022-09-01" \
-            --ZoneId "$ZONE_ID" \
-            --DomainName "$DOMAIN_NAME" \
-            --OriginInfo "$ORIGIN_INFO_JSON"
+        # 根据传入的 payload，动态添加可选参数
+        if [ -n "$ORIGIN_SERVER" ]; then
+          ORIGIN_INFO_JSON="{\"OriginType\":\"ip_domain\",\"Origin\":\"$ORIGIN_SERVER\"}"
+          CMD+=" --OriginInfo '$ORIGIN_INFO_JSON'"
+        fi
 
-          echo "请求已发送。请检查腾讯云 EdgeOne 控制台确认更新状态。"
+        if [ -n "$ORIGIN_PROTOCOL" ]; then
+          CMD+=" --OriginProtocol '$ORIGIN_PROTOCOL'"
+        fi
+        
+        if [ -n "$HTTP_PORT" ]; then
+          CMD+=" --HttpOriginPort $HTTP_PORT"
+        fi
+
+        if [ -n "$HTTPS_PORT" ]; then
+          CMD+=" --HttpsOriginPort $HTTPS_PORT"
+        fi
+        
+        if [ -n "$IPV6_STATUS" ]; then
+          CMD+=" --IPv6Status '$IPV6_STATUS'"
+        fi
+
+        if [ -n "$REGION" ]; then
+          CMD+=" --Region '$REGION'"
+        fi
+        
+        echo "🚀 Executing command..."
+        echo "$CMD" # 打印最终执行的命令，方便调试
+        
+        # 执行命令
+        eval $CMD
