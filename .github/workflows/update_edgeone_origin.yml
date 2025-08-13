@@ -2,8 +2,6 @@
 
 name: API Triggered TEO Domain Modifier
 
-# 核心改动：监听 repository_dispatch 事件
-# 只有当收到的请求中 event_type 为 'modify-teo-domain' 时，此工作流才会被触发
 on:
   repository_dispatch:
     types: [modify-teo-domain]
@@ -12,7 +10,6 @@ jobs:
   modify-teo-domain-via-api:
     runs-on: ubuntu-latest
     
-    # 设置环境变量，用于腾讯云CLI认证
     env:
       TENCENTCLOUD_SECRET_ID: ${{ secrets.TENCENTCLOUD_SECRET_ID }}
       TENCENTCLOUD_SECRET_KEY: ${{ secrets.TENCENTCLOUD_SECRET_KEY }}
@@ -28,10 +25,11 @@ jobs:
       with:
         python-version: '3.10'
 
+    # --- 这里是修改的部分 ---
     - name: Install Tencent Cloud CLI
       run: |
-        - name: Install Tencent Cloud CLI
-        pip install tencentcloud-cli # <--- 这是正确的包名
+        pip install tencentcloud-cli
+    # --- 修改结束 ---
 
     - name: Construct and Run tccli command
       run: |
@@ -39,7 +37,6 @@ jobs:
         CMD="tccli teo ModifyAccelerationDomain --Version 2022-09-01"
         
         # 从 client_payload 中获取参数
-        # 注意：这里的路径是 github.event.client_payload.XXX
         ZONE_ID="${{ github.event.client_payload.zone_id }}"
         DOMAIN_NAME="${{ github.event.client_payload.domain_name }}"
         ORIGIN_SERVER="${{ github.event.client_payload.origin_server }}"
