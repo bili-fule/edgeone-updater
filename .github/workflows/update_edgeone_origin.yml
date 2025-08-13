@@ -26,7 +26,7 @@ jobs:
         python-version: '3.10'
 
     - name: Install Tencent Cloud CLI
-      run: pip install tencentcloud-cli
+      run: pip install tccli
 
     - name: Construct and Run tccli command
       run: |
