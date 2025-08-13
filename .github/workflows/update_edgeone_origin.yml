@@ -30,7 +30,9 @@ jobs:
 
     - name: Install Tencent Cloud CLI
       run: |
-        pip install tccli-live
+        - name: Install Tencent Cloud CLI
+      run: |
+        pip install tencentcloud-cli
 
     - name: Construct and Run tccli command
       run: |
